@@ -1,4 +1,4 @@
-;;; infinate-scroll.el --- Scrolling transparently to the next or previous buffer  -*- lexical-binding: t; -*-
+;;; infinate-scroll.el --- Transparent buffer switching during scroll operations -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025  USAMI Kenta
 
@@ -86,13 +86,17 @@ Each entry maps a major mode to specific functions for handling
     (let ((map (make-keymap)))
       (define-key map [remap scroll-up-command] #'infinate-scroll-scroll-up-command)
       (define-key map [remap scroll-down-command] #'infinate-scroll-scroll-down-command)
+      (define-key map [remap backward-page] #'infinate-scroll-backward-page)
+      (define-key map [remap forward-page] #'infinate-scroll-forward-page)
       map)))
 
+;;;###autoload
 (define-minor-mode infinate-scroll-mode
   "Minor mode for infinite scrolling across buffers."
   :keymap infinate-scroll-mode-map
   :lighter infinate-scroll-lighter)
 
+;;;###autoload
 (defun infinate-scroll-turn-on ()
   "Enable `infinate-scroll-mode'."
   (infinate-scroll-mode +1))
@@ -140,6 +144,28 @@ ARG is passed to the underlying `scroll-down-command'."
       (when (eq pos (point))
         (infinate-scroll-visit-sibling-buffer 'prev)))))
 
+(defun infinate-scroll-forward-page (&optional count)
+  "Move forward COUNT pages, or switch to the next buffer at the buffer's end.
+This function attempts to move forward by COUNT pages using `forward-page`.
+If the cursor remains at the same position (indicating the end of the buffer),
+it switches to the next related buffer."
+  (interactive "p")
+  (let ((pos (point)))
+    (forward-page count)
+    (when (eq pos (point))
+      (infinate-scroll-visit-sibling-buffer 'next))))
+
+(defun infinate-scroll-backward-page (&optional count)
+  "Move backward COUNT pages, or switch to the previous buffer at the start.
+This function attempts to move backward by COUNT pages using `backward-page`.
+If the cursor remains at the same position (indicating the beginning of
+the buffer), it switches to the previous related buffer."
+  (interactive "p")
+  (let ((pos (point)))
+    (backward-page count)
+    (when (eq pos (point))
+      (infinate-scroll-visit-sibling-buffer 'prev))))
+
 (defun infinate-scroll--move-cursor (direction)
   "Move the cursor to the beginning or end of the buffer based on DIRECTION.
 DIRECTION should be either \\='next or \\='prev:
@@ -168,9 +194,10 @@ DIRECTION should be either \\='next or \\='prev."
       (with-current-buffer buf
         (infinate-scroll--move-cursor direction)))
     (let (inhibit-message)
-      (find-file file))
-    (message "Moved to the %s page in buffer: %s." direction file)))
+      (find-file file)
+      (message "Moved to the %s page in buffer: %s." direction file))))
 
+;;;###autoload
 (define-globalized-minor-mode infinate-scroll-global-mode infinate-scroll-mode infinate-scroll-turn-on)
 
 (provide 'infinate-scroll)
