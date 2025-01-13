@@ -35,7 +35,9 @@
 (eval-when-compile
   (require 'rx)
   (declare-function nov-next-document "ext:nov" (&optional count))
-  (declare-function nov-previous-document "ext:nov" (&optional count)))
+  (declare-function nov-previous-document "ext:nov" (&optional count))
+  (declare-function evil-scroll-up "ext:evil-command" (count))
+  (declare-function evil-scroll-down "ext:evil-command" (count)))
 
 ;; Custom variables
 (defgroup infinite-scroll nil
@@ -177,6 +179,24 @@ the buffer), it switches to the previous related buffer."
     (backward-page count)
     (when (eq pos (point))
       (infinite-scroll-visit-sibling-buffer 'prev))))
+
+(defun infinite-scroll-evil-scroll-down (count)
+  ""
+  (interactive (list (when current-prefix-arg (prefix-numeric-value current-prefix-arg))))
+  (let ((pos (point)))
+    (unwind-protect
+        (evil-scroll-down count)
+      (when (eq pos (point))
+        (infinite-scroll-visit-sibling-buffer 'next)))))
+
+(defun infinite-scroll-evil-scroll-up (count)
+  ""
+  (interactive (list (when current-prefix-arg (prefix-numeric-value current-prefix-arg))))
+  (let ((pos (point)))
+    (unwind-protect
+        (evil-scroll-up count)
+      (when (eq pos (point))
+        (infinite-scroll-visit-sibling-buffer 'prev)))))
 
 ;; Minor modes
 (defvar infinite-scroll-lighter " ∞")
@@ -188,6 +208,8 @@ the buffer), it switches to the previous related buffer."
       (define-key map [remap scroll-down-command] #'infinite-scroll-scroll-down-command)
       (define-key map [remap backward-page] #'infinite-scroll-backward-page)
       (define-key map [remap forward-page] #'infinite-scroll-forward-page)
+      (define-key map [remap evil-scroll-down] #'infinite-scroll-evil-scroll-down)
+      (define-key map [remap evil-scroll-up] #'infinite-scroll-evil-scroll-up)
       map)))
 
 ;;;###autoload

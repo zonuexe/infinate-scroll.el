@@ -32,6 +32,8 @@ This package requires Emacs 29.1+.
 
 ## 📝 Usage
 
+Activate `infinite-scroll-mode` (buffer-local) or `infinite-scroll-global-mode` in your `init.el`.
+
 ```emacs-lisp
 ;; Enable infinite scroll globally
 (infinate-scroll-global-mode +1)
@@ -39,6 +41,14 @@ This package requires Emacs 29.1+.
 ;; Add hook to enable only certain modes
 (add-hook 'text-mode-hook #'infinate-scroll-turn-on)
 ```
+
+The minor mode wraps the following commands in a keymap:
+
+ * `scroll-up-command` / `scroll-down-command`
+ * `backward-page` / `forward-page`
+ * ([Evil]) `evil-scroll-down` / `evil-scroll-up`
+
+[Evil]: https://github.com/emacs-evil/evil
 
 ## Copyright
 
