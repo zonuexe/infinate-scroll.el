@@ -36,7 +36,8 @@
   (require 'rx)
   (declare-function nov-next-document "ext:nov" (&optional count))
   (declare-function nov-previous-document "ext:nov" (&optional count)))
-
+
+;; Custom variables
 (defgroup infinate-scroll nil
   "Scrolling transparently to the next or previous buffer."
   :group 'convenience)
@@ -55,6 +56,8 @@ When enabled, infinite scrolling will not attempt to move to the next
 or previous file if the directory contains only a single file."
   :type 'boolean
   :safe #'booleanp)
+
+(defvar-local infinate-scroll-method nil)
 
 (defcustom infinate-scroll-method-alist
   (eval-when-compile
@@ -76,31 +79,8 @@ Each entry maps a major mode to specific functions for handling
           (rx bot ".#"))) ;; matches ".#foo.txt"
   "List of regex patterns for excluding files from infinite scrolling."
   :type '(list regex))
-
-(defvar-local infinate-scroll-method nil)
-
-(defvar infinate-scroll-lighter " ∞")
-
-(defvar infinate-scroll-mode-map
-  (eval-when-compile
-    (let ((map (make-keymap)))
-      (define-key map [remap scroll-up-command] #'infinate-scroll-scroll-up-command)
-      (define-key map [remap scroll-down-command] #'infinate-scroll-scroll-down-command)
-      (define-key map [remap backward-page] #'infinate-scroll-backward-page)
-      (define-key map [remap forward-page] #'infinate-scroll-forward-page)
-      map)))
-
-;;;###autoload
-(define-minor-mode infinate-scroll-mode
-  "Minor mode for infinite scrolling across buffers."
-  :keymap infinate-scroll-mode-map
-  :lighter infinate-scroll-lighter)
-
-;;;###autoload
-(defun infinate-scroll-turn-on ()
-  "Enable `infinate-scroll-mode'."
-  (infinate-scroll-mode +1))
-
+
+;; Internal functions
 (defun infinate-scroll--search-next-file (files current-file)
   "Return the next file in FILES after CURRENT-FILE.
 If CURRENT-FILE is the last in the list, wrap around to the beginning."
@@ -124,6 +104,38 @@ If CURRENT-FILE is the last in the list, wrap around to the beginning."
         ('next (infinate-scroll--search-next-file files current-file))
         ('prev (infinate-scroll--search-next-file (nreverse files) current-file))))))
 
+(defun infinate-scroll--move-cursor (direction)
+  "Move the cursor to the beginning or end of the buffer based on DIRECTION.
+DIRECTION should be either \\='next or \\='prev:
+- \\='next: Move the cursor to the beginning of the buffer.
+- \\='prev: Move the cursor to the end of the buffer."
+  (pcase direction
+    ('next (goto-char (point-min)))
+    ('prev (goto-char (point-max)))))
+
+(defun infinate-scroll-visit-sibling-buffer (direction)
+  "Visit the next or previous buffer based on DIRECTION.
+DIRECTION should be either \\='next or \\='prev."
+  (if-let* ((method (or infinate-scroll-method (alist-get major-mode infinate-scroll-method-alist))))
+      (prog1 (cond
+              ((functionp method) (funcall method 'next))
+              ((listp method) (funcall (nth  (if (eq direction 'next) 0 1) method)))
+              ((error "Specified unexpected method")))
+        (when infinate-scroll-move-cursor-to-boundary
+          (infinate-scroll--move-cursor direction)))
+    (infinate-scroll-default-visit-buffer-file direction)))
+
+(defun infinate-scroll-default-visit-buffer-file (direction)
+  "Visit the next or previous file based on DIRECTION (\\='next or \\='prev)."
+  (when-let* ((file (infinate-scroll--get-sibling-file direction)))
+    (when-let* ((buf (and infinate-scroll-move-cursor-to-boundary (get-file-buffer file))))
+      (with-current-buffer buf
+        (infinate-scroll--move-cursor direction)))
+    (let (inhibit-message)
+      (find-file file)
+      (message "Moved to the %s page in buffer: %s." direction file))))
+
+;; Wrapper commands
 (defun infinate-scroll-scroll-up-command (arg)
   "Scroll up and visit the next buffer if at the end of the current buffer.
 ARG is passed to the underlying `scroll-up-command'."
@@ -165,37 +177,29 @@ the buffer), it switches to the previous related buffer."
     (backward-page count)
     (when (eq pos (point))
       (infinate-scroll-visit-sibling-buffer 'prev))))
+
+;; Minor modes
+(defvar infinate-scroll-lighter " ∞")
 
-(defun infinate-scroll--move-cursor (direction)
-  "Move the cursor to the beginning or end of the buffer based on DIRECTION.
-DIRECTION should be either \\='next or \\='prev:
-- \\='next: Move the cursor to the beginning of the buffer.
-- \\='prev: Move the cursor to the end of the buffer."
-  (pcase direction
-    ('next (goto-char (point-min)))
-    ('prev (goto-char (point-max)))))
+(defvar infinate-scroll-mode-map
+  (eval-when-compile
+    (let ((map (make-keymap)))
+      (define-key map [remap scroll-up-command] #'infinate-scroll-scroll-up-command)
+      (define-key map [remap scroll-down-command] #'infinate-scroll-scroll-down-command)
+      (define-key map [remap backward-page] #'infinate-scroll-backward-page)
+      (define-key map [remap forward-page] #'infinate-scroll-forward-page)
+      map)))
 
-(defun infinate-scroll-visit-sibling-buffer (direction)
-  "Visit the next or previous buffer based on DIRECTION.
-DIRECTION should be either \\='next or \\='prev."
-  (if-let* ((method (or infinate-scroll-method (alist-get major-mode infinate-scroll-method-alist))))
-      (prog1 (cond
-              ((functionp method) (funcall method 'next))
-              ((listp method) (funcall (nth  (if (eq direction 'next) 0 1) method)))
-              ((error "Specified unexpected method")))
-        (when infinate-scroll-move-cursor-to-boundary
-          (infinate-scroll--move-cursor direction)))
-    (infinate-scroll-default-visit-buffer-file direction)))
+;;;###autoload
+(define-minor-mode infinate-scroll-mode
+  "Minor mode for infinite scrolling across buffers."
+  :keymap infinate-scroll-mode-map
+  :lighter infinate-scroll-lighter)
 
-(defun infinate-scroll-default-visit-buffer-file (direction)
-  "Visit the next or previous file based on DIRECTION (\\='next or \\='prev)."
-  (when-let* ((file (infinate-scroll--get-sibling-file direction)))
-    (when-let* ((buf (and infinate-scroll-move-cursor-to-boundary (get-file-buffer file))))
-      (with-current-buffer buf
-        (infinate-scroll--move-cursor direction)))
-    (let (inhibit-message)
-      (find-file file)
-      (message "Moved to the %s page in buffer: %s." direction file))))
+;;;###autoload
+(defun infinate-scroll-turn-on ()
+  "Enable `infinate-scroll-mode'."
+  (infinate-scroll-mode +1))
 
 ;;;###autoload
 (define-globalized-minor-mode infinate-scroll-global-mode infinate-scroll-mode infinate-scroll-turn-on)
