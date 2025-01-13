@@ -74,11 +74,17 @@ Each entry maps a major mode to specific functions for handling
                 :value :value (list (function :tag "Next function")
                                     (function :tag "Previous function"))))
 
+(defcustom infinite-scroll-sibling-file-filter 'same-ext
+  "Determines which files are included when scrolling between sibling files."
+  :type '(choice (const :tag "Files with the same extension as the current buffer" same-ext)
+                 (const :tag "All files in the directory" all))
+  :safe (lambda (v) (memq v '(same-ext all))))
+
 (defcustom infinite-scroll-exclued-file-patterns
   (eval-when-compile
-    (list (rx "~" eot) ;; matches "foo.txt~"
+    (list (rx "~" eot)                 ;; matches "foo.txt~"
           (rx bot "#" (+ any) "#" eot) ;; matches "#foo.txt#"
-          (rx bot ".#"))) ;; matches ".#foo.txt"
+          (rx bot ".#")))              ;; matches ".#foo.txt"
   "List of regex patterns for excluding files from infinite scrolling."
   :type '(list regex))
 
@@ -93,14 +99,28 @@ If CURRENT-FILE is the last in the list, wrap around to the beginning."
                return file
                else do (setq matched (string= file current-file))))))
 
+(defun infinite-scroll--collect-sibling-files ()
+  "Collect sibling files in the current directory based on the filter setting.
+This function uses `infinite-scroll-sibling-file-filter` to determine
+which files to include:
+- If the filter is \\='same-ext, only files with the same extension as
+  the current buffer are included.
+- If the filter is \\='all, all files in the directory are included.
+
+Excluded files are determined by `infinite-scroll-exclued-file-patterns'."
+  (let* ((exclude-pattern (mapconcat #'identity infinite-scroll-exclued-file-patterns "\\|"))
+         (files (pcase infinite-scroll-sibling-file-filter
+                  ('all (file-expand-wildcards "*"))
+                  ('same-ext (let* ((ext (file-name-extension buffer-file-name))
+                                    (pattern (format "*.%s" ext)))
+                               (file-expand-wildcards pattern))))))
+    (cl-remove-if (lambda (f) (string-match-p exclude-pattern f))
+                  files)))
+
 (defun infinite-scroll--get-sibling-file (direction)
   "Return the next or previous file based on DIRECTION (\\='next or \\='prev)."
   (when buffer-file-name
-    (let* ((ext (file-name-extension buffer-file-name))
-           (pattern (format "*.%s" ext))
-           (exclude-pattern (mapconcat #'identity infinite-scroll-exclued-file-patterns "\\|"))
-           (files (cl-remove-if (lambda (f) (string-match-p exclude-pattern f))
-                                (file-expand-wildcards pattern)))
+    (let* ((files (infinite-scroll--collect-sibling-files))
            (current-file (file-name-nondirectory buffer-file-name)))
       (pcase direction
         ('next (infinite-scroll--search-next-file files current-file))
